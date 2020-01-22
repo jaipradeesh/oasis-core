@@ -3,18 +3,21 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/oasislabs/oasis-core/go/common"
 	"github.com/oasislabs/oasis-core/go/common/logging"
 	epochtime "github.com/oasislabs/oasis-core/go/epochtime/api"
+	"github.com/oasislabs/oasis-core/go/oasis-node/cmd/common/pprof"
 	"github.com/oasislabs/oasis-core/go/oasis-test-runner/env"
 	"github.com/oasislabs/oasis-core/go/oasis-test-runner/oasis"
 	"github.com/oasislabs/oasis-core/go/oasis-test-runner/scenario"
 	registry "github.com/oasislabs/oasis-core/go/registry/api"
 )
 
-const (
+var (
 	// numComputeRuntimes is the number of runtimes, all with common runtimeBinary registered.
 	numComputeRuntimes = 2
 
@@ -23,9 +26,10 @@ const (
 
 	// numComputeWorkers is the number of compute workers.
 	numComputeWorkers = 1
-)
 
-var (
+	// executorGroupSize is the number of executor nodes.
+	executorGroupSize = 2
+
 	// MultipleRuntimes is a scenario which tests running multiple runtimes on one node.
 	MultipleRuntimes scenario.Scenario = &multipleRuntimesImpl{
 		basicImpl: *newBasicImpl("multiple-runtimes", "simple-keyvalue-client", nil),
@@ -44,9 +48,25 @@ func (mr *multipleRuntimesImpl) Name() string {
 }
 
 func (mr *multipleRuntimesImpl) Fixture() (*oasis.NetworkFixture, error) {
+	// Take default fixtures from Basic test.
 	f, err := mr.basicImpl.Fixture()
 	if err != nil {
 		return nil, err
+	}
+
+	// Read env variables for number of nodes and number of runtimes for
+	// benchmarking.
+	if os.Getenv("EXECUTOR_GROUP_SIZE") != "" {
+		gs, _ := strconv.Atoi(os.Getenv("EXECUTOR_GROUP_SIZE"))
+		executorGroupSize = gs
+	}
+	if os.Getenv("COMPUTE_RUNTIMES") != "" {
+		cr, _ := strconv.Atoi(os.Getenv("COMPUTE_RUNTIMES"))
+		numComputeRuntimes = cr
+	}
+	if os.Getenv("COMPUTE_WORKERS") != "" {
+		cw, _ := strconv.Atoi(os.Getenv("COMPUTE_WORKERS"))
+		numComputeWorkers = cw
 	}
 
 	// Remove existing compute runtimes from fixture, remember RuntimeID and
@@ -81,7 +101,7 @@ func (mr *multipleRuntimesImpl) Fixture() (*oasis.NetworkFixture, error) {
 			Keymanager: 0,
 			Binary:     runtimeBinary,
 			Executor: registry.ExecutorParameters{
-				GroupSize:       1,
+				GroupSize:       uint64(executorGroupSize),
 				GroupBackupSize: 0,
 				RoundTimeout:    10 * time.Second,
 			},
@@ -144,9 +164,13 @@ func (mr *multipleRuntimesImpl) Run(childEnv *env.Env) error {
 					"runtime_id", rt.ID,
 				)
 
-				if err := mr.submitRuntimeTx(ctx, rt.ID, "hello", fmt.Sprintf("world %d from %s", i, rt.ID)); err != nil {
+				_ = pprof.WriteHeap("multiple-runtimes.runtime_" + strconv.Itoa(i) + ".beforeSubmitRuntimeTx")
+
+				if err := mr.submitRuntimeTx(ctx, rt.ID, "hello", fmt.Sprintf("world at iteration %d from %s", i, rt.ID)); err != nil {
 					return err
 				}
+
+				_ = pprof.WriteHeap("multiple-runtimes.runtime_" + strconv.Itoa(i) + ".afterSubmitRuntimeTx")
 
 				mr.logger.Info("triggering epoch transition",
 					"epoch", epoch,

@@ -2,6 +2,7 @@ package urkel
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/oasislabs/oasis-core/go/common"
 	"github.com/oasislabs/oasis-core/go/common/crypto/hash"
@@ -19,6 +20,7 @@ import (
 func (t *Tree) CommitKnown(ctx context.Context, root node.Root) (writelog.WriteLog, error) {
 	writeLog, _, err := t.commitWithHooks(ctx, root.Namespace, root.Round, func(rootHash hash.Hash) error {
 		if !rootHash.Equal(&root.Hash) {
+			fmt.Println("expcted root:", rootHash)
 			return ErrKnownRootMismatch
 		}
 
