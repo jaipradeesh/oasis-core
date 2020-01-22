@@ -1,4 +1,4 @@
-name: Continuous integration
+name: CI (lint)
 
 # Trigger the workflow when:
 on:
