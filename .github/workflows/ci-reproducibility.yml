@@ -59,6 +59,12 @@ jobs:
         with:
           name: oasis-node-SHA256SUM-build${{ matrix.build_number }}
           path: oasis-node-SHA256SUM
+      - name: Upload oasis-node binary
+        uses: actions/upload-artifact@v1
+        with:
+          name: oasis-node-build${{ matrix.build_number }}
+          path: dist/oasis-node_linux_amd64/oasis-node
+
 
   compare-checksums:
     name: Compare checksums
