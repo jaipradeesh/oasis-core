@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          path: build${{ matrix.build_number }}
       - name: Set up Go 1.13
         uses: actions/setup-go@v1.1.2
         with:
@@ -50,10 +52,11 @@ jobs:
           CURL_CMD: curl --proto =https --tlsv1.2 -sSL
       - name: Build a snapshot release
         run: |
+          cd build${{ matrix.build_number }}
           make release
       - name: Get checksum of oasis-node
         run: |
-          sha256sum dist/oasis-node_linux_amd64/oasis-node > oasis-node-SHA256SUM
+          sha256sum build${{ matrix.build_number }}/dist/oasis-node_linux_amd64/oasis-node > oasis-node-SHA256SUM
       - name: Upload build's checksum
         uses: actions/upload-artifact@v1
         with:
@@ -63,7 +66,7 @@ jobs:
         uses: actions/upload-artifact@v1
         with:
           name: oasis-node-build${{ matrix.build_number }}
-          path: dist/oasis-node_linux_amd64/oasis-node
+          path: build${{ matrix.build_number }}/dist/oasis-node_linux_amd64/oasis-node
 
 
   compare-checksums:
