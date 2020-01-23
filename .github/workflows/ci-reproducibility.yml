@@ -16,8 +16,8 @@ on: push
 
 jobs:
 
-  build-release:
-    name: Build release
+  build-go:
+    name: Build Go code
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -26,6 +26,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
+          # NOTE: We make a git checkout to a unique directory for each build to
+          # catch reproducibility issues with code in different local paths.
           path: build${{ matrix.build_number }}
       - name: Set up Go 1.13
         uses: actions/setup-go@v1.1.2
@@ -34,7 +36,7 @@ jobs:
       - name: Install Oasis Core prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install gcc g++ protobuf-compiler make cmake libssl-dev libseccomp-dev
+          sudo apt-get install make libseccomp-dev
       - name: Install GoReleaser
         run: |
           cd $(mktemp --directory /tmp/goreleaser.XXXXX)
@@ -50,45 +52,62 @@ jobs:
           GORELEASER_VERSION: 0.123.3-oasis1
           GORELEASER_TARBALL: goreleaser_Linux_x86_64.tar.gz
           CURL_CMD: curl --proto =https --tlsv1.2 -sSL
-      - name: Build a snapshot release
+      - name: Build oasis-node with Make
+        run: |
+          cd build${{ matrix.build_number }}/go
+          make oasis-node
+      - name: Build oasis-node with GoReleaser
         run: |
           cd build${{ matrix.build_number }}
           make release
-      - name: Get checksum of oasis-node
+      - name: Get checksums of oasis-node builds
         run: |
-          sha256sum build${{ matrix.build_number }}/dist/oasis-node_linux_amd64/oasis-node > oasis-node-SHA256SUM
+          cd build${{ matrix.build_number }}
+          sha256sum ${OASIS_NODE_MAKE_PATH} ${OASIS_NODE_GORELEASER_PATH} > ../oasis-node-SHA256SUMs
+        env:
+          OASIS_NODE_MAKE_PATH: go/oasis-node/oasis-node
+          OASIS_NODE_GORELEASER_PATH: dist/oasis-node_linux_amd64/oasis-node
       - name: Upload build's checksum
         uses: actions/upload-artifact@v1
         with:
-          name: oasis-node-SHA256SUM-build${{ matrix.build_number }}
-          path: oasis-node-SHA256SUM
-      - name: Upload oasis-node binary
+          name: oasis-node-SHA256SUMs-build${{ matrix.build_number }}
+          path: oasis-node-SHA256SUMs
+      - name: Upload oasis-node binary built with Make
         uses: actions/upload-artifact@v1
         with:
-          name: oasis-node-build${{ matrix.build_number }}
+          name: oasis-node-build${{ matrix.build_number }}-make
+          path: build${{ matrix.build_number }}/go/oasis-node/oasis-node
+      - name: Upload oasis-node binary built with GoReleaser
+        uses: actions/upload-artifact@v1
+        with:
+          name: oasis-node-build${{ matrix.build_number }}-goreleaser
           path: build${{ matrix.build_number }}/dist/oasis-node_linux_amd64/oasis-node
 
 
   compare-checksums:
     name: Compare checksums
     # NOTE: Requiring a matrix job waits for all the matrix jobs to be complete.
-    needs: build-release
+    needs: build-go
     runs-on: ubuntu-latest
     steps:
       - name: Download checksum of oasis-node for build 1
         uses: actions/download-artifact@v1
         with:
-          name: oasis-node-SHA256SUM-build1
+          name: oasis-node-SHA256SUMs-build1
       - name: Download checksum of oasis-node for build 2
         uses: actions/download-artifact@v1
         with:
-          name: oasis-node-SHA256SUM-build2
+          name: oasis-node-SHA256SUMs-build2
       - name: Check if checksums are the same
         shell: bash
         run: |
-          if ! DIFF=$(diff --unified=0 oasis-node-SHA256SUM-build{1,2}/oasis-node-SHA256SUM); then
-            echo "Error: SHA256SUM for builds 1 and 2 differ: ";
-            echo -e "$DIFF";
-            exit 1;
+          for i in 1 2; do
+            echo "Checksums for build $i are: "
+            cat oasis-node-SHA256SUMs-build$i/oasis-node-SHA256SUMs
+          done
+          if ! DIFF=$(diff --unified=0 oasis-node-SHA256SUMs-build{1,2}/oasis-node-SHA256SUMs); then
+            echo "Error: SHA256SUMs for builds 1 and 2 differ: "
+            echo -e "$DIFF"
+            exit 1
           fi
 
