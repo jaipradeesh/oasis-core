@@ -100,7 +100,7 @@ GO_BUILD_CMD := env -u GOPATH $(OASIS_GO) build $(GOFLAGS)
 GO_TEST_HELPER_URKEL_PATH := storage/mkvs/urkel/interop/urkel-test-helpers
 
 # Instruct GoReleaser to create a "snapshot" release by default.
-GORELEASER_ARGS ?= release --snapshot --rm-dist
+GORELEASER_ARGS ?= release --snapshot --rm-dist --debug
 # If the appropriate environment variable is set, create a real release.
 ifeq ($(OASIS_CORE_REAL_RELEASE), true)
 # Create temporary file with GitHub release's text.
