@@ -19,6 +19,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
+      - -buildid=
       - -X github.com/oasislabs/oasis-core/go/common/version.SoftwareVersion={{.Env.VERSION}}
     goos:
       - linux
