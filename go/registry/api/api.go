@@ -572,18 +572,16 @@ func VerifyRegisterNodeArgs( // nolint: gocyclo
 		)
 		return nil, nil, err
 	}
-	certPub, err := verifyNodeCertificate(logger, &n)
+	_, err := verifyNodeCertificate(logger, &n)
 	if err != nil {
 		return nil, nil, err
 	}
-	if !sigNode.MultiSigned.IsSignedBy(certPub) {
-		logger.Error("RegisterNode: not signed by TLS certificate key",
-			"signed_node", sigNode,
-			"node", n,
-		)
-		return nil, nil, fmt.Errorf("%w: registration not signed by TLS certificate key", ErrInvalidArgument)
+	if n.Committee.NextCertificate != nil {
+		_, grr := verifyNodeNextCertificate(logger, &n)
+		if grr != nil {
+			return nil, nil, grr
+		}
 	}
-	expectedSigners = append(expectedSigners, certPub)
 
 	// Validate P2PInfo.
 	if !n.P2P.ID.IsValid() {
@@ -686,6 +684,38 @@ func verifyNodeCertificate(logger *logging.Logger, node *node.Node) (signature.P
 	var certPub signature.PublicKey
 
 	cert, err := node.Committee.ParseCertificate()
+	if err != nil {
+		logger.Error("RegisterNode: failed to parse committee certificate",
+			"err", err,
+			"node", node,
+		)
+		return certPub, fmt.Errorf("%w: failed to parse committee certificate", ErrInvalidArgument)
+	}
+
+	edPub, ok := cert.PublicKey.(goEd25519.PublicKey)
+	if !ok {
+		logger.Error("RegisterNode: incorrect committee certifiate signing algorithm",
+			"node", node,
+		)
+		return certPub, fmt.Errorf("%w: incorrect committee certificate signing algorithm", ErrInvalidArgument)
+	}
+
+	if err = certPub.UnmarshalBinary(edPub); err != nil {
+		// This should NEVER happen.
+		logger.Error("RegisterNode: malformed committee certificate signing key",
+			"err", err,
+			"node", node,
+		)
+		return certPub, fmt.Errorf("%w: malformed committee certificate signing key", ErrInvalidArgument)
+	}
+
+	return certPub, nil
+}
+
+func verifyNodeNextCertificate(logger *logging.Logger, node *node.Node) (signature.PublicKey, error) {
+	var certPub signature.PublicKey
+
+	cert, err := node.Committee.ParseNextCertificate()
 	if err != nil {
 		logger.Error("RegisterNode: failed to parse committee certificate",
 			"err", err,

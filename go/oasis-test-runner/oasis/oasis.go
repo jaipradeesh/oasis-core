@@ -768,16 +768,6 @@ func nodeConsensusKeyPath(dir *env.Dir) string {
 	return filepath.Join(dir.String(), fileSigner.FileConsensusKey)
 }
 
-func nodeTLSKeyPath(dir *env.Dir) string {
-	_, path := identity.TLSCertPaths(dir.String())
-	return path
-}
-
-func nodeTLSCertPath(dir *env.Dir) string {
-	path, _ := identity.TLSCertPaths(dir.String())
-	return path
-}
-
 func nodeExportsPath(dir *env.Dir) string {
 	return filepath.Join(dir.String(), exportsDir)
 }

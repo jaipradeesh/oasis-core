@@ -33,11 +33,6 @@ type SentryCfg struct {
 	KeymanagerIndices []int
 }
 
-// TLSCertPath returns the path to the node's TLS certificate.
-func (sentry *Sentry) TLSCertPath() string {
-	return nodeTLSCertPath(sentry.dir)
-}
-
 func (sentry *Sentry) startNode() error {
 	validators, err := resolveValidators(sentry.net, sentry.validatorIndices)
 	if err != nil {

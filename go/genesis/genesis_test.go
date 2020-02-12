@@ -1,7 +1,6 @@
 package genesis
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"math"
 	"testing"
@@ -242,11 +241,9 @@ func TestGenesisSanityCheck(t *testing.T) {
 			Addresses: []node.ConsensusAddress{testConsensusAddress},
 		},
 	}
-	nodeTLSSigner := memorySigner.NewFromRuntime(dummyCert.PrivateKey.(ed25519.PrivateKey))
 	nodeSigners := []signature.Signer{
 		nodeSigner,
 		nodeP2PSigner,
-		nodeTLSSigner,
 		nodeConsensusSigner,
 	}
 	signedTestNode := signNodeOrDie(nodeSigners, testNode)

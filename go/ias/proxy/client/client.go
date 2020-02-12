@@ -119,7 +119,7 @@ func New(identity *identity.Identity, proxyAddr, tlsCertFile string) (api.Endpoi
 		certPool := x509.NewCertPool()
 		certPool.AddCert(parsedCert)
 		creds := credentials.NewTLS(&tls.Config{
-			Certificates: []tls.Certificate{*identity.TLSCertificate},
+			Certificates: []tls.Certificate{*identity.GetTLSCertificate()},
 			RootCAs:      certPool,
 			ServerName:   proxy.CommonName,
 		})

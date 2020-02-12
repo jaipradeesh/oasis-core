@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"path/filepath"
+	"sync"
 
 	"github.com/oasislabs/oasis-core/go/common/crypto/signature"
 	"github.com/oasislabs/oasis-core/go/common/crypto/signature/signers/memory"
@@ -25,13 +26,12 @@ const (
 
 	// CommonName is the CommonName to use when generating TLS certificates.
 	CommonName = "oasis-node"
-
-	tlsKeyFilename  = "tls_identity.pem"
-	tlsCertFilename = "tls_identity_cert.pem"
 )
 
 // Identity is a node identity.
 type Identity struct {
+	sync.RWMutex
+
 	// NodeSigner is a node identity key signer.
 	NodeSigner signature.Signer
 	// P2PSigner is a node P2P link key signer.
@@ -41,7 +41,64 @@ type Identity struct {
 	// TLSSigner is a node TLS certificate signer.
 	TLSSigner signature.Signer
 	// TLSCertificate is a certificate that can be used for TLS.
-	TLSCertificate *tls.Certificate
+	tlsCertificate *tls.Certificate
+	// NextTLSCertificate is a certificate that can be used for TLS in the next epoch.
+	nextTLSCertificate *tls.Certificate
+}
+
+// RotateCertificates rotates the TLS certificates.
+// This is called on each epoch change.
+func (i *Identity) RotateCertificates() error {
+	i.Lock()
+	defer i.Unlock()
+
+	if i.tlsCertificate != nil {
+		// Use the prepared certificate.
+		if i.nextTLSCertificate != nil {
+			i.tlsCertificate = i.nextTLSCertificate
+		}
+
+		// Generate a new TLS certificate to be used in the next epoch.
+		var err error
+		i.nextTLSCertificate, err = tlsCert.Generate(CommonName)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetTLSCertificate returns the current TLS certificate.
+func (i *Identity) GetTLSCertificate() *tls.Certificate {
+	i.RLock()
+	defer i.RUnlock()
+
+	return i.tlsCertificate
+}
+
+// SetTLSCertificate sets the current TLS certificate.
+func (i *Identity) SetTLSCertificate(cert *tls.Certificate) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.tlsCertificate = cert
+}
+
+// GetNextTLSCertificate returns the next TLS certificate.
+func (i *Identity) GetNextTLSCertificate() *tls.Certificate {
+	i.RLock()
+	defer i.RUnlock()
+
+	return i.nextTLSCertificate
+}
+
+// SetNextTLSCertificate sets the next TLS certificate.
+func (i *Identity) SetNextTLSCertificate(nextCert *tls.Certificate) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.nextTLSCertificate = nextCert
 }
 
 // Load loads an identity.
@@ -86,40 +143,22 @@ func doLoadOrGenerate(dataDir string, signerFactory signature.SignerFactory, sho
 		signers = append(signers, signer)
 	}
 
-	// TLS certificate.
-	//
-	// TODO: The key and cert could probably be made totally ephemeral, as long
-	// as the registry update takes effect immediately.
-	var (
-		cert *tls.Certificate
-		err  error
-	)
-	tlsCertPath, tlsKeyPath := TLSCertPaths(dataDir)
-	if shouldGenerate {
-		cert, err = tlsCert.LoadOrGenerate(tlsCertPath, tlsKeyPath, CommonName)
-	} else {
-		cert, err = tlsCert.Load(tlsCertPath, tlsKeyPath)
+	// TLS certificate is always freshly generated.
+	cert, err := tlsCert.Generate(CommonName)
+	if err != nil {
+		return nil, err
 	}
+	nextCert, err := tlsCert.Generate(CommonName)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Identity{
-		NodeSigner:      signers[0],
-		P2PSigner:       signers[1],
-		ConsensusSigner: signers[2],
-		TLSSigner:       memory.NewFromRuntime(cert.PrivateKey.(ed25519.PrivateKey)),
-		TLSCertificate:  cert,
+		NodeSigner:         signers[0],
+		P2PSigner:          signers[1],
+		ConsensusSigner:    signers[2],
+		TLSSigner:          memory.NewFromRuntime(cert.PrivateKey.(ed25519.PrivateKey)),
+		tlsCertificate:     cert,
+		nextTLSCertificate: nextCert,
 	}, nil
-}
-
-// TLSCertPaths returns the TLS private key and certificate paths relative
-// to the passed data directory.
-func TLSCertPaths(dataDir string) (string, string) {
-	var (
-		tlsKeyPath  = filepath.Join(dataDir, tlsKeyFilename)
-		tlsCertPath = filepath.Join(dataDir, tlsCertFilename)
-	)
-
-	return tlsCertPath, tlsKeyPath
 }

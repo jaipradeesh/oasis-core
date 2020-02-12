@@ -91,7 +91,7 @@ func doConnect(cmd *cobra.Command) (*grpc.ClientConn, registry.Backend) {
 	return conn, client
 }
 
-func doInit(cmd *cobra.Command, args []string) {
+func doInit(cmd *cobra.Command, args []string) { // nolint: gocyclo
 	if err := cmdCommon.Init(); err != nil {
 		cmdCommon.EarlyLogAndExit(err)
 	}
@@ -163,12 +163,18 @@ func doInit(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	var nextCert []byte
+	if c := nodeIdentity.GetNextTLSCertificate(); c != nil {
+		nextCert = c.Certificate[0]
+	}
+
 	n := &node.Node{
 		ID:         nodeIdentity.NodeSigner.Public(),
 		EntityID:   entityID,
 		Expiration: viper.GetUint64(CfgExpiration),
 		Committee: node.CommitteeInfo{
-			Certificate: nodeIdentity.TLSCertificate.Certificate[0],
+			Certificate:     nodeIdentity.GetTLSCertificate().Certificate[0],
+			NextCertificate: nextCert,
 		},
 		P2P: node.P2PInfo{
 			ID: nodeIdentity.P2PSigner.Public(),
@@ -262,7 +268,6 @@ func doInit(cmd *cobra.Command, args []string) {
 	signers = append(signers, []signature.Signer{
 		nodeIdentity.P2PSigner,
 		nodeIdentity.ConsensusSigner,
-		nodeIdentity.TLSSigner,
 	}...)
 
 	signed, err := node.MultiSignNode(signers, registry.RegisterGenesisNodeSignatureContext, n)

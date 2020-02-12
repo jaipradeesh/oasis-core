@@ -57,16 +57,6 @@ func (km *Keymanager) ConsensusKeyPath() string {
 	return nodeConsensusKeyPath(km.dir)
 }
 
-// TLSKeyPath returns the path to the node's TLS key.
-func (km *Keymanager) TLSKeyPath() string {
-	return nodeTLSKeyPath(km.dir)
-}
-
-// TLSCertPath returns the path to the node's TLS certificate.
-func (km *Keymanager) TLSCertPath() string {
-	return nodeTLSCertPath(km.dir)
-}
-
 // ExportsPath returns the path to the node's exports data dir.
 func (km *Keymanager) ExportsPath() string {
 	return nodeExportsPath(km.dir)

@@ -4,7 +4,6 @@ package grpc
 import (
 	"context"
 	tlsPkg "crypto/tls"
-	"crypto/x509"
 	"fmt"
 
 	flag "github.com/spf13/pflag"
@@ -30,9 +29,6 @@ const (
 	// CfgUpstreamAddress is the grpc address of the upstream node.
 	CfgUpstreamAddress = "worker.sentry.grpc.upstream.address"
 
-	// CfgUpstreamCert is the path to the certificate files of the upstream node.
-	CfgUpstreamCert = "worker.sentry.grpc.upstream.cert"
-
 	// CfgClientAddresses are addresses on which the gRPC endpoint is reachable.
 	CfgClientAddresses = "worker.sentry.grpc.client.address"
 	// CfgClientPort is the sentry node's client port.
@@ -55,25 +51,18 @@ func initConnection(ident *identity.Identity) (*upstreamConn, error) {
 	var err error
 
 	addr := viper.GetString(CfgUpstreamAddress)
-	certFile := viper.GetString(CfgUpstreamCert)
 
 	upstreamAddrs, err := configparser.ParseAddressList([]string{addr})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse address: %s: %w", addr, err)
 	}
-	upstreamCerts, err := configparser.ParseCertificateFiles([]string{certFile})
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate file %s: %w", certFile, err)
-	}
 
-	certPool := x509.NewCertPool()
-	for _, cert := range upstreamCerts {
-		certPool.AddCert(cert)
-	}
 	creds := credentials.NewTLS(&tlsPkg.Config{
-		Certificates: []tlsPkg.Certificate{*ident.TLSCertificate},
-		RootCAs:      certPool,
-		ServerName:   identity.CommonName,
+		RootCAs:    nil, // XXX: Fix this.
+		ServerName: identity.CommonName,
+		GetClientCertificate: func(cri *tlsPkg.CertificateRequestInfo) (*tlsPkg.Certificate, error) {
+			return ident.GetTLSCertificate(), nil
+		},
 	})
 
 	// Dial node
@@ -131,10 +120,10 @@ func New(identity *identity.Identity) (*Worker, error) {
 
 		// Create externally-accessible proxy gRPC server.
 		serverConfig := &cmnGrpc.ServerConfig{
-			Name:        "sentry-grpc",
-			Port:        uint16(viper.GetInt(CfgClientPort)),
-			Certificate: identity.TLSCertificate,
-			AuthFunc:    g.authFunction(),
+			Name:     "sentry-grpc",
+			Port:     uint16(viper.GetInt(CfgClientPort)),
+			Identity: identity,
+			AuthFunc: g.authFunction(),
 			CustomOptions: []grpc.ServerOption{
 				// All unknown requests will be proxied to the upstream grpc server.
 				grpc.UnknownServiceHandler(proxy.Handler(upstreamConn.conn)),
@@ -153,7 +142,6 @@ func New(identity *identity.Identity) (*Worker, error) {
 func init() {
 	Flags.Bool(CfgEnabled, false, "Enable Sentry gRPC worker (NOTE: This should only be enabled on gRPC Sentry nodes.)")
 	Flags.String(CfgUpstreamAddress, "", "Address of the upstream node")
-	Flags.String(CfgUpstreamCert, "", "Path to tls certificate of the upstream node")
 	Flags.StringSlice(CfgClientAddresses, []string{}, "Address/port(s) to use for client connections for accessing this node")
 	Flags.Uint16(CfgClientPort, 9100, "Port to use for incoming gRPC client connections")
 

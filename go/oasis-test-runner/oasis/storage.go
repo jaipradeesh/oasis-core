@@ -59,16 +59,6 @@ func (worker *Storage) ConsensusKeyPath() string {
 	return nodeConsensusKeyPath(worker.dir)
 }
 
-// TLSKeyPath returns the path to the node's TLS key.
-func (worker *Storage) TLSKeyPath() string {
-	return nodeTLSKeyPath(worker.dir)
-}
-
-// TLSCertPath returns the path to the node's TLS certificate.
-func (worker *Storage) TLSCertPath() string {
-	return nodeTLSCertPath(worker.dir)
-}
-
 // Exports path returns the path to the node's exports data dir.
 func (worker *Storage) ExportsPath() string {
 	return nodeExportsPath(worker.dir)

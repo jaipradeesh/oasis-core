@@ -28,7 +28,6 @@ func TestLoadOrGenerate(t *testing.T) {
 	require.EqualValues(t, identity.NodeSigner, identity2.NodeSigner)
 	require.EqualValues(t, identity.P2PSigner, identity2.P2PSigner)
 	require.EqualValues(t, identity.ConsensusSigner, identity2.ConsensusSigner)
-	require.EqualValues(t, identity.TLSSigner, identity2.TLSSigner)
-	// TODO: Check that it always generates a fresh certificate once oasis-core#1541 is done.
-	require.EqualValues(t, identity.TLSCertificate, identity2.TLSCertificate)
+	require.NotEqual(t, identity.TLSSigner, identity2.TLSSigner)
+	require.NotEqual(t, identity.GetTLSCertificate(), identity2.GetTLSCertificate())
 }
