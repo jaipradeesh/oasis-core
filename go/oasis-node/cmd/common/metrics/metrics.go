@@ -224,7 +224,7 @@ func New(ctx context.Context) (service.BackgroundService, error) {
 }
 
 func init() {
-	Flags.String(cfgMetricsMode, metricsModeNone, "metrics (prometheus) mode")
+	Flags.String(cfgMetricsMode, metricsModeNone, "metrics (prometheus) mode: none, pull, push")
 	Flags.String(cfgMetricsAddr, "127.0.0.1:3000", "metrics pull/push address")
 	Flags.String(cfgMetricsPushJobName, "", "metrics push job name")
 	Flags.String(cfgMetricsPushInstanceLabel, "", "metrics push instance label")

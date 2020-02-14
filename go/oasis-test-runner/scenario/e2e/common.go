@@ -31,6 +31,7 @@ const (
 var (
 	// Flags is the command line flags for the e2e tests.
 	Flags = flag.NewFlagSet("", flag.ContinueOnError)
+	NoParameters = []string{}
 
 	runtimeID    common.Namespace
 	keymanagerID common.Namespace

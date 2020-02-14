@@ -53,6 +53,7 @@ var (
 	scenarioMap      = make(map[string]scenario.Scenario)
 	defaultScenarios []scenario.Scenario
 	scenarios        []scenario.Scenario
+	scenarioParameters = make(map[string][]string)
 )
 
 // RootCmd returns the root command's structure that will be executed, so that
@@ -72,7 +73,7 @@ func Execute() {
 }
 
 // RegisterNondefault adds a scenario to the runner.
-func RegisterNondefault(scenario scenario.Scenario) error {
+func RegisterNondefault(scenario scenario.Scenario, parameters []string) error {
 	n := strings.ToLower(scenario.Name())
 	if _, ok := scenarioMap[n]; ok {
 		return errors.New("root: scenario already registered: " + n)
@@ -80,12 +81,17 @@ func RegisterNondefault(scenario scenario.Scenario) error {
 
 	scenarioMap[n] = scenario
 	scenarios = append(scenarios, scenario)
+
+	if parameters != nil && len(parameters) > 0 {
+		scenarioParameters[n] = parameters
+	}
+
 	return nil
 }
 
 // Register adds a scenario to the runner and the default scenarios list.
-func Register(scenario scenario.Scenario) error {
-	if err := RegisterNondefault(scenario); err != nil {
+func Register(scenario scenario.Scenario, parameters []string) error {
+	if err := RegisterNondefault(scenario, parameters); err != nil {
 		return err
 	}
 
@@ -297,7 +303,16 @@ func runList(cmd *cobra.Command, args []string) {
 		})
 
 		for _, v := range scenarios {
-			fmt.Printf("  * %v\n", v.Name())
+			fmt.Printf("  * %v", v.Name())
+			params := scenarioParameters[strings.ToLower(v.Name())]
+			if params != nil {
+				fmt.Printf(" (parameters:")
+				for _, p := range params {
+					fmt.Printf(" %v", p)
+				}
+				fmt.Printf(")")
+			}
+			fmt.Printf("\n")
 		}
 	}
 }

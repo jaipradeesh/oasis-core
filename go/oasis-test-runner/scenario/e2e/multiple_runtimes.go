@@ -35,6 +35,8 @@ var (
 		basicImpl: *newBasicImpl("multiple-runtimes", "simple-keyvalue-client", nil),
 		logger:    logging.GetLogger("scenario/e2e/multiple_runtimes"),
 	}
+
+	MultipleRuntimesParameters = []string{"num_compute_runtimes", "num_compute_runtime_txns", "num_compute_workers", "executor_group_size"}
 )
 
 type multipleRuntimesImpl struct {

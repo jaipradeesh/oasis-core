@@ -19,50 +19,50 @@ func main() {
 	// Register the e2e test cases.
 	rootCmd.Flags().AddFlagSet(e2e.Flags)
 	// Basic test.
-	_ = cmd.Register(e2e.Basic)
-	_ = cmd.Register(e2e.BasicEncryption)
+	_ = cmd.Register(e2e.Basic, e2e.NoParameters)
+	_ = cmd.Register(e2e.BasicEncryption, e2e.NoParameters)
 	// Byzantine executor node.
-	_ = cmd.Register(e2e.ByzantineExecutorHonest)
-	_ = cmd.Register(e2e.ByzantineExecutorWrong)
-	_ = cmd.Register(e2e.ByzantineExecutorStraggler)
+	_ = cmd.Register(e2e.ByzantineExecutorHonest, e2e.NoParameters)
+	_ = cmd.Register(e2e.ByzantineExecutorWrong, e2e.NoParameters)
+	_ = cmd.Register(e2e.ByzantineExecutorStraggler, e2e.NoParameters)
 	// Byzantine merge node.
-	_ = cmd.Register(e2e.ByzantineMergeHonest)
-	_ = cmd.Register(e2e.ByzantineMergeWrong)
-	_ = cmd.Register(e2e.ByzantineMergeStraggler)
+	_ = cmd.Register(e2e.ByzantineMergeHonest, e2e.NoParameters)
+	_ = cmd.Register(e2e.ByzantineMergeWrong, e2e.NoParameters)
+	_ = cmd.Register(e2e.ByzantineMergeStraggler, e2e.NoParameters)
 	// Storage sync test.
-	_ = cmd.Register(e2e.StorageSync)
+	_ = cmd.Register(e2e.StorageSync, e2e.NoParameters)
 	// Sentry test.
-	_ = cmd.Register(e2e.Sentry)
-	_ = cmd.Register(e2e.SentryEncryption)
+	_ = cmd.Register(e2e.Sentry, e2e.NoParameters)
+	_ = cmd.Register(e2e.SentryEncryption, e2e.NoParameters)
 	// Keymanager restart test.
-	_ = cmd.Register(e2e.KeymanagerRestart)
+	_ = cmd.Register(e2e.KeymanagerRestart, e2e.NoParameters)
 	// Dump/restore test.
-	_ = cmd.Register(e2e.DumpRestore)
+	_ = cmd.Register(e2e.DumpRestore, e2e.NoParameters)
 	// Halt test.
-	_ = cmd.Register(e2e.HaltRestore)
+	_ = cmd.Register(e2e.HaltRestore, e2e.NoParameters)
 	// Multiple runtimes test.
-	_ = cmd.Register(e2e.MultipleRuntimes)
+	_ = cmd.Register(e2e.MultipleRuntimes, e2e.MultipleRuntimesParameters)
 	// Registry CLI test.
-	_ = cmd.Register(e2e.RegistryCLI)
+	_ = cmd.Register(e2e.RegistryCLI, e2e.NoParameters)
 	// Stake CLI test.
-	_ = cmd.Register(e2e.StakeCLI)
+	_ = cmd.Register(e2e.StakeCLI, e2e.NoParameters)
 	// Node shutdown test.
-	_ = cmd.Register(e2e.NodeShutdown)
+	_ = cmd.Register(e2e.NodeShutdown, e2e.NoParameters)
 	// Gas fees tests.
-	_ = cmd.Register(e2e.GasFeesStaking)
-	_ = cmd.Register(e2e.GasFeesRuntimes)
+	_ = cmd.Register(e2e.GasFeesStaking, e2e.NoParameters)
+	_ = cmd.Register(e2e.GasFeesRuntimes, e2e.NoParameters)
 	// Identity CLI test.
-	_ = cmd.Register(e2e.IdentityCLI)
+	_ = cmd.Register(e2e.IdentityCLI, e2e.NoParameters)
 	// Runtime prune test.
-	_ = cmd.Register(e2e.RuntimePrune)
+	_ = cmd.Register(e2e.RuntimePrune, e2e.NoParameters)
 	// Runtime dynamic registration test.
-	_ = cmd.Register(e2e.RuntimeDynamic)
+	_ = cmd.Register(e2e.RuntimeDynamic, e2e.NoParameters)
 	// Transaction source test.
-	_ = cmd.Register(e2e.TxSourceTransferShort)
-	_ = cmd.RegisterNondefault(e2e.TxSourceTransfer)
+	_ = cmd.Register(e2e.TxSourceTransferShort, e2e.NoParameters)
+	_ = cmd.RegisterNondefault(e2e.TxSourceTransfer, e2e.NoParameters)
 	// Node upgrade tests.
-	_ = cmd.Register(e2e.NodeUpgrade)
-	_ = cmd.Register(e2e.NodeUpgradeCancel)
+	_ = cmd.Register(e2e.NodeUpgrade, e2e.NoParameters)
+	_ = cmd.Register(e2e.NodeUpgradeCancel, e2e.NoParameters)
 
 	// Execute the command, now that everything has been initialized.
 	cmd.Execute()
