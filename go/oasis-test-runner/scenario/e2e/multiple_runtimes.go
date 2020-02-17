@@ -45,13 +45,6 @@ type multipleRuntimesImpl struct {
 }
 
 func (mr *multipleRuntimesImpl) Name() string {
-	mr.params = make(map[string][]interface{})
-	mr.params["num_compute_runtimes"] = append(mr.params["num_compute_runtimes"], &numComputeRuntimes)
-
-	switch mr.params["num_compute_runtimes"][0].(type) {
-	case *int:
-		mr.params["num_compute_runtimes"][0], _ = strconv.ParseInt("10", 10, 8)
-	}
 	return "multiple-runtimes"
 }
 
