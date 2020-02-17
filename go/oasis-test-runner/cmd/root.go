@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -53,7 +54,10 @@ var (
 	scenarioMap      = make(map[string]scenario.Scenario)
 	defaultScenarios []scenario.Scenario
 	scenarios        []scenario.Scenario
-	scenarioParameters = make(map[string][]string)
+
+	// XXX: Need to use StringToStringVar with variable below instead of StringToString due to bug in Cobra/Viper.
+	// See https://github.com/spf13/cobra/issues/778#issuecomment-441851614
+	scenarioParamVals = make(map[string]*map[string]string)
 )
 
 // RootCmd returns the root command's structure that will be executed, so that
@@ -73,7 +77,7 @@ func Execute() {
 }
 
 // RegisterNondefault adds a scenario to the runner.
-func RegisterNondefault(scenario scenario.Scenario, parameters []string) error {
+func RegisterNondefault(scenario scenario.Scenario) error {
 	n := strings.ToLower(scenario.Name())
 	if _, ok := scenarioMap[n]; ok {
 		return errors.New("root: scenario already registered: " + n)
@@ -82,16 +86,87 @@ func RegisterNondefault(scenario scenario.Scenario, parameters []string) error {
 	scenarioMap[n] = scenario
 	scenarios = append(scenarios, scenario)
 
-	if parameters != nil && len(parameters) > 0 {
-		scenarioParameters[n] = parameters
+	params := scenario.Parameters()
+	if len(params) > 0 {
+		sParams := make(map[string]string)
+		for k, v := range params {
+			switch v := v.(type) {
+			case *int:
+				sParams[k] = strconv.Itoa(*v)
+			case *int64:
+				sParams[k] = strconv.FormatInt(*v, 10)
+			case *float64:
+				sParams[k] = strconv.FormatFloat(*v, 'E', -1, 64)
+			case *bool:
+				sParams[k] = strconv.FormatBool(*v)
+			default:
+				sParams[k] = *v.(*string)
+			}
+		}
+		scenarioParamVals[n] = &map[string]string{}
+		rootFlags.StringToStringVar(scenarioParamVals[n], "params."+n, sParams, "parameters for test "+n)
+
+		// Re-register rootFlags.
+		rootCmd.PersistentFlags().AddFlagSet(rootFlags)
+		_ = viper.BindPFlag("params."+n, rootFlags.Lookup("params."+n))
+	}
+
+	return nil
+}
+
+// parseTestParams parses all --params.<test_name> <key>=<val>,... flags and sets appropriate internal test variables.
+func parseTestParams() error {
+	for _, s := range scenarios {
+		n := s.Name()
+		params := s.Parameters()
+
+		// No parameters provided for the test.
+		if scenarioParamVals[n] == nil {
+			continue
+		}
+
+		userParams := *scenarioParamVals[n] //viper.GetStringMapString("params."+n)
+		for k, v := range userParams {
+			if params[k] == nil {
+				return errors.New(fmt.Sprintf("invalid test parameter %s for test %s", k, n))
+			}
+			switch params[k].(type) {
+			case *int:
+				val, err := strconv.ParseInt(v, 10, 32)
+				if err != nil {
+					return err
+				}
+				*params[k].(*int) = int(val)
+			case *int64:
+				val, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return err
+				}
+				*params[k].(*int64) = val
+			case *float64:
+				val, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					return err
+				}
+				*params[k].(*float64) = val
+			case *bool:
+				val, err := strconv.ParseBool(v)
+				if err != nil {
+					return err
+				}
+				*params[k].(*bool) = val
+			default:
+				params[k] = v
+			}
+		}
 	}
 
 	return nil
 }
 
 // Register adds a scenario to the runner and the default scenarios list.
-func Register(scenario scenario.Scenario, parameters []string) error {
-	if err := RegisterNondefault(scenario, parameters); err != nil {
+func Register(scenario scenario.Scenario) error {
+	if err := RegisterNondefault(scenario); err != nil {
 		return err
 	}
 
@@ -249,6 +324,12 @@ func doScenario(childEnv *env.Env, scenario scenario.Scenario) (err error) {
 		}
 	}()
 
+	// Parse test parameters passed by CLI.
+	if err = parseTestParams(); err != nil {
+		err = errors.Wrap(err, "root: failed to parse test params")
+		return
+	}
+
 	var fixture *oasis.NetworkFixture
 	if fixture, err = scenario.Fixture(); err != nil {
 		err = errors.Wrap(err, "root: failed to initialize network fixture")
@@ -304,10 +385,10 @@ func runList(cmd *cobra.Command, args []string) {
 
 		for _, v := range scenarios {
 			fmt.Printf("  * %v", v.Name())
-			params := scenarioParameters[strings.ToLower(v.Name())]
-			if params != nil {
+			params := v.Parameters()
+			if len(params) > 0 {
 				fmt.Printf(" (parameters:")
-				for _, p := range params {
+				for p := range params {
 					fmt.Printf(" %v", p)
 				}
 				fmt.Printf(")")

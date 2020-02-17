@@ -66,6 +66,10 @@ func (sc *basicImpl) Name() string {
 	return sc.name
 }
 
+func (sc *basicImpl) Parameters() map[string]interface{} {
+	return NoParameters
+}
+
 func (sc *basicImpl) Fixture() (*oasis.NetworkFixture, error) {
 	var tee node.TEEHardware
 	err := tee.FromString(viper.GetString(cfgTEEHardware))

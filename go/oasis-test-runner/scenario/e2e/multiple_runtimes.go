@@ -35,18 +35,33 @@ var (
 		basicImpl: *newBasicImpl("multiple-runtimes", "simple-keyvalue-client", nil),
 		logger:    logging.GetLogger("scenario/e2e/multiple_runtimes"),
 	}
-
-	MultipleRuntimesParameters = []string{"num_compute_runtimes", "num_compute_runtime_txns", "num_compute_workers", "executor_group_size"}
 )
 
 type multipleRuntimesImpl struct {
 	basicImpl
 
 	logger *logging.Logger
+	params map[string][]interface{}
 }
 
 func (mr *multipleRuntimesImpl) Name() string {
+	mr.params = make(map[string][]interface{})
+	mr.params["num_compute_runtimes"] = append(mr.params["num_compute_runtimes"], &numComputeRuntimes)
+
+	switch mr.params["num_compute_runtimes"][0].(type) {
+	case *int:
+		mr.params["num_compute_runtimes"][0], _ = strconv.ParseInt("10", 10, 8)
+	}
 	return "multiple-runtimes"
+}
+
+func (mr *multipleRuntimesImpl) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"num_compute_runtimes":     &numComputeRuntimes,
+		"num_compute_runtime_txns": &numComputeRuntimeTxns,
+		"num_compute_workers":      &numComputeWorkers,
+		"executor_group_size":      &executorGroupSize,
+	}
 }
 
 func (mr *multipleRuntimesImpl) Fixture() (*oasis.NetworkFixture, error) {
