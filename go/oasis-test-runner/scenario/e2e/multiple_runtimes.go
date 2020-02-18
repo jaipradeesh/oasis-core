@@ -25,7 +25,7 @@ var (
 	numComputeRuntimeTxns = 2
 
 	// numComputeWorkers is the number of compute workers.
-	numComputeWorkers = 1
+	numComputeWorkers = 2
 
 	// executorGroupSize is the number of executor nodes.
 	executorGroupSize = 2
@@ -41,7 +41,6 @@ type multipleRuntimesImpl struct {
 	basicImpl
 
 	logger *logging.Logger
-	params map[string][]interface{}
 }
 
 func (mr *multipleRuntimesImpl) Name() string {

@@ -28,6 +28,7 @@ const (
 	cfgLogFmt           = "log.format"
 	cfgLogLevel         = "log.level"
 	cfgLogNoStdout      = "log.no_stdout"
+	cfgNumRuns          = "num_runs"
 	cfgTest             = "test"
 	cfgParallelJobCount = "parallel.job_count"
 	cfgParallelJobIndex = "parallel.job_index"
@@ -50,6 +51,7 @@ var (
 	rootFlags = flag.NewFlagSet("", flag.ContinueOnError)
 
 	cfgFile string
+	numRuns int
 
 	scenarioMap      = make(map[string]scenario.Scenario)
 	defaultScenarios []scenario.Scenario
@@ -257,61 +259,69 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	parallelJobCount := viper.GetInt(cfgParallelJobCount)
 	parallelJobIndex := viper.GetInt(cfgParallelJobIndex)
 
-	for index, v := range toRun {
-		n := v.Name()
+	// Parse test parameters passed by CLI.
+	if err = parseTestParams(); err != nil {
+		return errors.Wrap(err, "root: failed to parse test params")
+	}
 
-		if index%parallelJobCount != parallelJobIndex {
-			logger.Info("skipping test case (assigned to different parallel job)",
-				"test", n,
-			)
-			continue
-		}
+	// Run all tests numRuns times.
+	for r := 0; r < numRuns; r++ {
+		for index, v := range toRun {
+			n := fmt.Sprintf("%s-%d", v.Name(), r)
 
-		if excludeMap[strings.ToLower(n)] {
-			logger.Info("skipping test case (excluded by environment)",
-				"test", n,
-			)
-			continue
-		}
-
-		logger.Info("running test case",
-			"test", n,
-		)
-
-		childEnv, err := rootEnv.NewChild(n)
-		if err != nil {
-			logger.Error("failed to setup child environment",
-				"err", err,
-				"test", n,
-			)
-			return errors.Wrap(err, "root: failed to setup child environment")
-		}
-
-		if err = doScenario(childEnv, v); err != nil {
-			logger.Error("failed to run test case",
-				"err", err,
-				"test", n,
-			)
-			err = errors.Wrap(err, "root: failed to run test case")
-		}
-
-		if cleanErr := doCleanup(childEnv); cleanErr != nil {
-			logger.Error("failed to clean up child envionment",
-				"err", cleanErr,
-				"test", n,
-			)
-			if err == nil {
-				err = errors.Wrap(cleanErr, "root: failed to clean up child enviroment")
+			if index%parallelJobCount != parallelJobIndex {
+				logger.Info("skipping test case (assigned to different parallel job)",
+					"test", n,
+				)
+				continue
 			}
-		}
 
-		if err != nil {
-			return err
-		}
+			if excludeMap[strings.ToLower(n)] {
+				logger.Info("skipping test case (excluded by environment)",
+					"test", n,
+				)
+				continue
+			}
 
-		logger.Info("passed test case",
-			"test", n,
-		)
+			logger.Info("running test case",
+				"test", n,
+			)
+
+			childEnv, err := rootEnv.NewChild(n)
+			if err != nil {
+				logger.Error("failed to setup child environment",
+					"err", err,
+					"test", n,
+				)
+				return errors.Wrap(err, "root: failed to setup child environment")
+			}
+
+			if err = doScenario(childEnv, v); err != nil {
+				logger.Error("failed to run test case",
+					"err", err,
+					"test", n,
+				)
+				err = errors.Wrap(err, "root: failed to run test case")
+			}
+
+			if cleanErr := doCleanup(childEnv); cleanErr != nil {
+				logger.Error("failed to clean up child envionment",
+					"err", cleanErr,
+					"test", n,
+				)
+				if err == nil {
+					err = errors.Wrap(cleanErr, "root: failed to clean up child enviroment")
+				}
+			}
+
+			if err != nil {
+				return err
+			}
+
+			logger.Info("passed test case",
+				"test", n,
+			)
+		}
 	}
 
 	return nil
@@ -323,12 +333,6 @@ func doScenario(childEnv *env.Env, scenario scenario.Scenario) (err error) {
 			err = fmt.Errorf("root: panic caught running test case: %v", r)
 		}
 	}()
-
-	// Parse test parameters passed by CLI.
-	if err = parseTestParams(); err != nil {
-		err = errors.Wrap(err, "root: failed to parse test params")
-		return
-	}
 
 	var fixture *oasis.NetworkFixture
 	if fixture, err = scenario.Fixture(); err != nil {
@@ -408,6 +412,7 @@ func init() {
 	rootFlags.Var(&logLevel, cfgLogLevel, "log level")
 	rootFlags.Bool(cfgLogNoStdout, false, "do not mutiplex logs to stdout")
 	rootFlags.StringSliceP(cfgTest, "t", nil, "test(s) to run")
+	rootFlags.IntVarP(&numRuns, cfgNumRuns, "n", 1, "number of runs for given test(s)")
 	rootFlags.Int(cfgParallelJobCount, 1, "(for CI) number of overall parallel jobs")
 	rootFlags.Int(cfgParallelJobIndex, 0, "(for CI) index of this parallel job")
 	_ = viper.BindPFlags(rootFlags)
