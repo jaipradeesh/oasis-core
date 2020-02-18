@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/tendermint/tendermint/abci/types"
 	"golang.org/x/crypto/sha3"
 
@@ -86,17 +85,17 @@ func (app *keymanagerApplication) EndBlock(ctx *abci.Context, request types.Requ
 }
 
 func (app *keymanagerApplication) FireTimer(ctx *abci.Context, timer *abci.Timer) error {
-	return errors.New("tendermint/keymanager: unexpected timer")
+	return fmt.Errorf("tendermint/keymanager: unexpected timer")
 }
 
 func (app *keymanagerApplication) onEpochChange(ctx *abci.Context, epoch epochtime.EpochTime) error {
 	// Query the runtime and node lists.
 	regState := registryState.NewMutableState(ctx.State())
-	runtimes, _ := regState.Runtimes()
-	nodes, _ := regState.Nodes()
+	runtimes, _ := regState.Runtimes(ctx)
+	nodes, _ := regState.Nodes(ctx)
 	registry.SortNodeList(nodes)
 
-	params, err := regState.ConsensusParameters()
+	params, err := regState.ConsensusParameters(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get consensus parameters: %w", err)
 	}
@@ -130,7 +129,7 @@ func (app *keymanagerApplication) onEpochChange(ctx *abci.Context, epoch epochti
 				)
 
 				// Suspend runtime.
-				if err := regState.SuspendRuntime(rt.ID); err != nil {
+				if err := regState.SuspendRuntime(ctx, rt.ID); err != nil {
 					return err
 				}
 
@@ -139,7 +138,7 @@ func (app *keymanagerApplication) onEpochChange(ctx *abci.Context, epoch epochti
 		}
 
 		var forceEmit bool
-		oldStatus, err := state.Status(rt.ID)
+		oldStatus, err := state.Status(ctx, rt.ID)
 		switch err {
 		case nil:
 		case api.ErrNoSuchStatus:
@@ -154,7 +153,7 @@ func (app *keymanagerApplication) onEpochChange(ctx *abci.Context, epoch epochti
 				"id", rt.ID,
 				"err", err,
 			)
-			return errors.Wrap(err, "failed to query key manager status")
+			return fmt.Errorf("failed to query key manager status: %w", err)
 		}
 
 		newStatus := app.generateStatus(ctx, rt, oldStatus, nodes)
@@ -168,7 +167,9 @@ func (app *keymanagerApplication) onEpochChange(ctx *abci.Context, epoch epochti
 			)
 
 			// Set, enqueue for emit.
-			state.SetStatus(newStatus)
+			if err := state.SetStatus(ctx, newStatus); err != nil {
+				return fmt.Errorf("failed to set key manager status: %w", err)
+			}
 			toEmit = append(toEmit, newStatus)
 		}
 	}

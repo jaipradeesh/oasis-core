@@ -84,7 +84,7 @@ func (app *beaconApplication) onBeaconEpochChange(ctx *abci.Context, epoch epoch
 	var entropyCtx, entropy []byte
 
 	state := beaconState.NewMutableState(ctx.State())
-	params, err := state.ConsensusParameters()
+	params, err := state.ConsensusParameters(ctx)
 	if err != nil {
 		ctx.Logger().Error("failed to fetch consensus parameters",
 			"err", err,
@@ -143,7 +143,7 @@ func (app *beaconApplication) onBeaconEpochChange(ctx *abci.Context, epoch epoch
 func (app *beaconApplication) onNewBeacon(ctx *abci.Context, beacon []byte) error {
 	state := beaconState.NewMutableState(ctx.State())
 
-	if err := state.SetBeacon(beacon); err != nil {
+	if err := state.SetBeacon(ctx, beacon); err != nil {
 		ctx.Logger().Error("onNewBeacon: failed to set beacon",
 			"err", err,
 		)

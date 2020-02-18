@@ -97,17 +97,17 @@ func (app *schedulerApplication) BeginBlock(ctx *abci.Context, request types.Req
 		}
 
 		beacState := beaconState.NewMutableState(ctx.State())
-		beacon, err := beacState.Beacon()
+		beacon, err := beacState.Beacon(ctx)
 		if err != nil {
 			return errors.Wrap(err, "tendermint/scheduler: couldn't get beacon")
 		}
 
 		regState := registryState.NewMutableState(ctx.State())
-		runtimes, err := regState.Runtimes()
+		runtimes, err := regState.Runtimes(ctx)
 		if err != nil {
 			return errors.Wrap(err, "tendermint/scheduler: couldn't get runtimes")
 		}
-		allNodes, err := regState.Nodes()
+		allNodes, err := regState.Nodes(ctx)
 		if err != nil {
 			return errors.Wrap(err, "tendermint/scheduler: couldn't get nodes")
 		}
@@ -116,7 +116,7 @@ func (app *schedulerApplication) BeginBlock(ctx *abci.Context, request types.Req
 		var nodes []*node.Node
 		for _, node := range allNodes {
 			var status *registry.NodeStatus
-			status, err = regState.NodeStatus(node.ID)
+			status, err = regState.NodeStatus(ctx, node.ID)
 			if err != nil {
 				return errors.Wrap(err, "tendermint/scheduler: couldn't get node status")
 			}
@@ -134,7 +134,7 @@ func (app *schedulerApplication) BeginBlock(ctx *abci.Context, request types.Req
 		}
 
 		state := schedulerState.NewMutableState(ctx.State())
-		params, err := state.ConsensusParameters()
+		params, err := state.ConsensusParameters(ctx)
 		if err != nil {
 			ctx.Logger().Error("failed to fetch consensus parameters",
 				"err", err,
@@ -198,7 +198,7 @@ func (app *schedulerApplication) BeginBlock(ctx *abci.Context, request types.Req
 		if entitiesEligibleForReward != nil {
 			accounts := publicKeyMapToSortedSlice(entitiesEligibleForReward)
 			stakingSt := stakingState.NewMutableState(ctx.State())
-			if err = stakingSt.AddRewards(epoch, &params.RewardFactorEpochElectionAny, accounts); err != nil {
+			if err = stakingSt.AddRewards(ctx, epoch, &params.RewardFactorEpochElectionAny, accounts); err != nil {
 				return errors.Wrap(err, "adding rewards")
 			}
 		}
@@ -218,7 +218,7 @@ func (app *schedulerApplication) EndBlock(ctx *abci.Context, req types.RequestEn
 	var resp types.ResponseEndBlock
 
 	state := schedulerState.NewMutableState(ctx.State())
-	pendingValidators, err := state.PendingValidators()
+	pendingValidators, err := state.PendingValidators(ctx)
 	if err != nil {
 		return resp, errors.Wrap(err, "scheduler/tendermint: failed to query pending validators")
 	}
@@ -227,13 +227,15 @@ func (app *schedulerApplication) EndBlock(ctx *abci.Context, req types.RequestEn
 		return resp, nil
 	}
 
-	currentValidators, err := state.CurrentValidators()
+	currentValidators, err := state.CurrentValidators(ctx)
 	if err != nil {
 		return resp, errors.Wrap(err, "scheduler/tendermint: failed to query current validators")
 	}
 
 	// Clear out the pending validator update.
-	state.PutPendingValidators(nil)
+	if err = state.PutPendingValidators(ctx, nil); err != nil {
+		return resp, fmt.Errorf("failed to clear validators: %w", err)
+	}
 
 	// Tendermint expects a vector of ValidatorUpdate that expresses
 	// the difference between the current validator set (tracked manually
@@ -284,7 +286,9 @@ func (app *schedulerApplication) EndBlock(ctx *abci.Context, req types.RequestEn
 	resp.ValidatorUpdates = updates
 
 	// Stash the updated validator set.
-	state.PutCurrentValidators(pendingValidators)
+	if err = state.PutCurrentValidators(ctx, pendingValidators); err != nil {
+		return resp, fmt.Errorf("failed to set validators: %w", err)
+	}
 
 	return resp, nil
 }
@@ -456,8 +460,7 @@ func (app *schedulerApplication) electCommittee(
 			"kind", kind,
 			"runtime_id", rt.ID,
 		)
-		schedulerState.NewMutableState(ctx.State()).DropCommittee(kind, rt.ID)
-		return nil
+		return schedulerState.NewMutableState(ctx.State()).DropCommittee(ctx, kind, rt.ID)
 	}
 
 	nrNodes, wantedNodes := len(nodeList), workerSize+backupSize
@@ -469,8 +472,7 @@ func (app *schedulerApplication) electCommittee(
 			"backup_size", backupSize,
 			"nr_nodes", nrNodes,
 		)
-		schedulerState.NewMutableState(ctx.State()).DropCommittee(kind, rt.ID)
-		return nil
+		return schedulerState.NewMutableState(ctx.State()).DropCommittee(ctx, kind, rt.ID)
 	}
 
 	// Do the actual election.
@@ -504,17 +506,15 @@ func (app *schedulerApplication) electCommittee(
 			"backup_size", backupSize,
 			"available", len(members),
 		)
-		schedulerState.NewMutableState(ctx.State()).DropCommittee(kind, rt.ID)
-		return nil
+		return schedulerState.NewMutableState(ctx.State()).DropCommittee(ctx, kind, rt.ID)
 	}
 
-	schedulerState.NewMutableState(ctx.State()).PutCommittee(&scheduler.Committee{
+	return schedulerState.NewMutableState(ctx.State()).PutCommittee(ctx, &scheduler.Committee{
 		Kind:      kind,
 		RuntimeID: rt.ID,
 		Members:   members,
 		ValidFor:  epoch,
 	})
-	return nil
 }
 
 // Operates on consensus connection.
@@ -632,7 +632,9 @@ electLoop:
 	// Set the new pending validator set in the ABCI state.  It needs to be
 	// applied in EndBlock.
 	state := schedulerState.NewMutableState(ctx.State())
-	state.PutPendingValidators(newValidators)
+	if err = state.PutPendingValidators(ctx, newValidators); err != nil {
+		return fmt.Errorf("failed to set pending validators: %w", err)
+	}
 
 	return nil
 }
@@ -662,12 +664,24 @@ func publicKeyMapToSliceByStake(
 		return entities, nil
 	}
 
-	// Stable-sort the shuffled slice by decending escrow balance.
+	// Stable-sort the shuffled slice by descending escrow balance.
+	var balanceErr error
 	sort.SliceStable(entities, func(i, j int) bool {
-		iBal := stakeAcc.GetEscrowBalance(entities[i])
-		jBal := stakeAcc.GetEscrowBalance(entities[j])
-		return iBal.Cmp(&jBal) == 1 // Note: Not -1 to get a reversed sort.
+		iBal, err := stakeAcc.GetEscrowBalance(entities[i])
+		if err != nil {
+			balanceErr = err
+			return false
+		}
+		jBal, err := stakeAcc.GetEscrowBalance(entities[j])
+		if err != nil {
+			balanceErr = err
+			return false
+		}
+		return iBal.Cmp(jBal) == 1 // Note: Not -1 to get a reversed sort.
 	})
+	if balanceErr != nil {
+		return nil, fmt.Errorf("failed to fetch escrow balance: %w", balanceErr)
+	}
 
 	return entities, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/tendermint/tendermint/abci/types"
 
@@ -68,7 +69,9 @@ func (app *keymanagerApplication) InitChain(ctx *abci.Context, request types.Req
 		}
 
 		// Set, enqueue for emit.
-		state.SetStatus(v)
+		if err := state.SetStatus(ctx, v); err != nil {
+			return fmt.Errorf("tendermint/keymanager: failed to set status: %w", err)
+		}
 		toEmit = append(toEmit, v)
 	}
 
@@ -80,7 +83,7 @@ func (app *keymanagerApplication) InitChain(ctx *abci.Context, request types.Req
 }
 
 func (kq *keymanagerQuerier) Genesis(ctx context.Context) (*keymanager.Genesis, error) {
-	statuses, err := kq.state.Statuses()
+	statuses, err := kq.state.Statuses(ctx)
 	if err != nil {
 		return nil, err
 	}

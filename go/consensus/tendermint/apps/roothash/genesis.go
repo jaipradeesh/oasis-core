@@ -2,6 +2,7 @@ package roothash
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tendermint/tendermint/abci/types"
 
@@ -20,7 +21,9 @@ func (app *rootHashApplication) InitChain(ctx *abci.Context, request types.Reque
 	st := doc.RootHash
 
 	state := roothashState.NewMutableState(ctx.State())
-	state.SetConsensusParameters(&st.Parameters)
+	if err := state.SetConsensusParameters(ctx, &st.Parameters); err != nil {
+		return fmt.Errorf("failed to set consensus parameters: %w", err)
+	}
 
 	// The per-runtime roothash state is done primarily via DeliverTx, but
 	// also needs to be done here since the genesis state can have runtime
@@ -30,19 +33,24 @@ func (app *rootHashApplication) InitChain(ctx *abci.Context, request types.Reque
 	// carved out it's entries by this point.
 
 	regState := registryState.NewMutableState(ctx.State())
-	runtimes, _ := regState.Runtimes()
+	runtimes, _ := regState.Runtimes(ctx)
 	for _, v := range runtimes {
 		ctx.Logger().Info("InitChain: allocating per-runtime state",
 			"runtime", v.ID,
 		)
-		app.onNewRuntime(ctx, v, &st)
+		if err := app.onNewRuntime(ctx, v, &st); err != nil {
+			return fmt.Errorf("failed to initialize runtime state: %w", err)
+		}
 	}
 
 	return nil
 }
 
 func (rq *rootHashQuerier) Genesis(ctx context.Context) (*roothashAPI.Genesis, error) {
-	runtimes := rq.state.Runtimes()
+	runtimes, err := rq.state.Runtimes(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get per-runtime states.
 	rtStates := make(map[common.Namespace]*api.RuntimeGenesis)
@@ -58,7 +66,7 @@ func (rq *rootHashQuerier) Genesis(ctx context.Context) (*roothashAPI.Genesis, e
 		rtStates[rt.Runtime.ID] = &rtState
 	}
 
-	params, err := rq.state.ConsensusParameters()
+	params, err := rq.state.ConsensusParameters(ctx)
 	if err != nil {
 		return nil, err
 	}

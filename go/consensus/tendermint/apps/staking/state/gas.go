@@ -45,7 +45,10 @@ func AuthenticateAndPayFees(
 	}
 
 	// Fetch account and make sure the nonce is correct.
-	account := state.Account(id)
+	account, err := state.Account(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to fetch account state: %w", err)
+	}
 	if account.General.Nonce != nonce {
 		logger.Error("invalid account nonce",
 			"account_id", id,
@@ -89,7 +92,9 @@ func AuthenticateAndPayFees(
 	}
 
 	account.General.Nonce++
-	state.SetAccount(id, account)
+	if err := state.SetAccount(ctx, id, account); err != nil {
+		return fmt.Errorf("failed to set account: %w", err)
+	}
 
 	// Configure gas accountant on the context.
 	ctx.SetGasAccountant(abci.NewCompositeGasAccountant(
@@ -106,5 +111,7 @@ func PersistBlockFees(ctx *abci.Context) {
 	fees := ctx.BlockContext().Get(feeAccumulatorKey{}).(*feeAccumulator).balance
 
 	state := NewMutableState(ctx.State())
-	state.SetLastBlockFees(&fees)
+	if err := state.SetLastBlockFees(ctx, &fees); err != nil {
+		panic(err)
+	}
 }

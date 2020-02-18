@@ -54,14 +54,16 @@ func (app *epochTimeMockApplication) InitChain(ctx *abci.Context, request types.
 func (app *epochTimeMockApplication) BeginBlock(ctx *abci.Context, request types.RequestBeginBlock) error {
 	state := newMutableState(ctx.State())
 
-	future, err := state.getFutureEpoch()
+	future, err := state.getFutureEpoch(ctx)
 	if err != nil {
 		return fmt.Errorf("BeginBlock: failed to get future epoch: %w", err)
 	}
 	if future == nil {
 		return nil
 	}
-	defer state.clearFutureEpoch()
+	defer func() {
+		_ = state.clearFutureEpoch(ctx)
+	}()
 
 	height := ctx.BlockHeight()
 	if future.Height != height {
@@ -77,7 +79,10 @@ func (app *epochTimeMockApplication) BeginBlock(ctx *abci.Context, request types
 		"current_height", height,
 	)
 
-	state.setEpoch(future.Epoch, height)
+	if err = state.setEpoch(ctx, future.Epoch, height); err != nil {
+		return fmt.Errorf("epochtime_mock: failed to set epoch: %w", err)
+	}
+
 	ctx.EmitEvent(api.NewEventBuilder(app.Name()).Attribute(KeyEpoch, cbor.Marshal(future.Epoch)))
 
 	return nil
@@ -125,7 +130,7 @@ func (app *epochTimeMockApplication) setEpoch(
 		"is_check_only", ctx.IsCheckOnly(),
 	)
 
-	return state.setFutureEpoch(epoch, height+1)
+	return state.setFutureEpoch(ctx, epoch, height+1)
 }
 
 // New constructs a new mock epochtime application instance.

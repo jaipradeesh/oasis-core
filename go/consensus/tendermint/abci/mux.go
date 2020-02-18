@@ -32,7 +32,6 @@ import (
 
 const (
 	stateKeyGenesisDigest   = "OasisGenesisDigest"
-	stateKeyGenesisRequest  = "OasisGenesisRequest"
 	stateKeyInitChainEvents = "OasisInitChainEvents"
 
 	metricsUpdateInterval = 10 * time.Second
@@ -57,6 +56,7 @@ var (
 // ApplicationConfig is the configuration for the consensus application.
 type ApplicationConfig struct {
 	DataDir         string
+	StorageBackend  string
 	Pruning         PruneConfig
 	HaltEpochHeight epochtime.EpochTime
 	MinGasPrice     uint64
@@ -216,11 +216,6 @@ func (a *ApplicationServer) RegisterGenesisHook(hook func()) {
 // consensus Halt epoch height is reached.
 func (a *ApplicationServer) RegisterHaltHook(hook func(ctx context.Context, blockHeight int64, epoch epochtime.EpochTime)) {
 	a.mux.registerHaltHook(hook)
-}
-
-// Pruner returns the ABCI state pruner.
-func (a *ApplicationServer) Pruner() StatePruner {
-	return a.mux.state.statePruner
 }
 
 // SetEpochtime sets the mux epochtime.
@@ -396,7 +391,10 @@ func (mux *abciMux) InitChain(req types.RequestInitChain) types.ResponseInitChai
 	tmp := bytes.NewBuffer(nil)
 	_ = types.WriteMessage(&req, tmp)
 	genesisDigest := sha512.Sum512_256(tmp.Bytes())
-	mux.state.deliverTxTree.Set([]byte(stateKeyGenesisDigest), genesisDigest[:])
+	err = mux.state.deliverTxTree.Insert(mux.state.ctx, []byte(stateKeyGenesisDigest), genesisDigest[:])
+	if err != nil {
+		panic(err)
+	}
 
 	resp := mux.BaseApplication.InitChain(req)
 
@@ -421,11 +419,6 @@ func (mux *abciMux) InitChain(req types.RequestInitChain) types.ResponseInitChai
 
 		mux.logger.Debug("Genesis hook dispatch complete")
 	}()
-
-	// TODO: remove stateKeyGenesisRequest here, see oasis-core#2426
-	b, _ = req.Marshal()
-	mux.state.deliverTxTree.Set([]byte(stateKeyGenesisRequest), b)
-	mux.state.checkTxTree.Set([]byte(stateKeyGenesisRequest), b)
 
 	// Call InitChain() on all applications.
 	mux.logger.Debug("InitChain: initializing applications")
@@ -452,7 +445,10 @@ func (mux *abciMux) InitChain(req types.RequestInitChain) types.ResponseInitChai
 	// Since returning emitted events doesn't work for InitChain() response yet,
 	// we store those and return them in BeginBlock().
 	evBinary := cbor.Marshal(ctx.GetEvents())
-	mux.state.deliverTxTree.Set([]byte(stateKeyInitChainEvents), evBinary)
+	err = mux.state.deliverTxTree.Insert(mux.state.ctx, []byte(stateKeyInitChainEvents), evBinary)
+	if err != nil {
+		panic(err)
+	}
 
 	return resp
 }
@@ -483,7 +479,7 @@ func (mux *abciMux) BeginBlock(req types.RequestBeginBlock) types.ResponseBeginB
 	ctx := mux.state.NewContext(ContextBeginBlock, mux.currentTime)
 	defer ctx.Close()
 
-	currentEpoch, err := mux.state.GetCurrentEpoch(ctx.Ctx())
+	currentEpoch, err := mux.state.GetCurrentEpoch(ctx)
 	if err != nil {
 		panic("mux: can't get current epoch in BeginBlock")
 	}
@@ -547,14 +543,19 @@ func (mux *abciMux) BeginBlock(req types.RequestBeginBlock) types.ResponseBeginB
 	// During the first block, also collect and prepend application events
 	// generated during InitChain to BeginBlock events.
 	if mux.state.BlockHeight() == 0 {
-		_, evBinary := mux.state.deliverTxTree.Get([]byte(stateKeyInitChainEvents))
+		evBinary, err := mux.state.deliverTxTree.Get(ctx, []byte(stateKeyInitChainEvents))
+		if err != nil {
+			panic(fmt.Errorf("mux: BeginBlock: failed to query init chain events: %w", err))
+		}
 		if evBinary != nil {
 			var events []types.Event
 			_ = cbor.Unmarshal(evBinary, &events)
 
 			response.Events = append(events, response.Events...)
 
-			mux.state.deliverTxTree.Remove([]byte(stateKeyInitChainEvents))
+			if err := mux.state.deliverTxTree.Remove(ctx, []byte(stateKeyInitChainEvents)); err != nil {
+				panic(fmt.Errorf("mux: BeginBlock: failed to remove init chain events: %w", err))
+			}
 		}
 	}
 
@@ -729,6 +730,14 @@ func (mux *abciMux) DeliverTx(req types.RequestDeliverTx) types.ResponseDeliverT
 	defer ctx.Close()
 
 	if err := mux.executeTx(ctx, req.Tx); err != nil {
+		if IsUnavailableStateError(err) {
+			// Make sure to not commit any transactions which include results based on unavailable
+			// and/or corrupted state -- doing so can further corrupt state.
+			ctx.Logger().Error("unavailable and/or corrupted state detected during tx processing",
+				"err", err,
+			)
+			panic(err)
+		}
 		module, code := errors.Code(err)
 
 		return types.ResponseDeliverTx{

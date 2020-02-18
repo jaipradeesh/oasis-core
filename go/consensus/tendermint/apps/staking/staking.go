@@ -4,7 +4,6 @@ package staking
 import (
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/tendermint/tendermint/abci/types"
 	tmtypes "github.com/tendermint/tendermint/types"
 
@@ -57,7 +56,7 @@ func (app *stakingApplication) BeginBlock(ctx *abci.Context, request types.Reque
 	stakeState := stakingState.NewMutableState(ctx.State())
 
 	// Look up the proposer's entity.
-	proposingEntity := app.resolveEntityIDFromProposer(regState, request, ctx)
+	proposingEntity := app.resolveEntityIDFromProposer(ctx, regState, request)
 
 	// Go through all signers of the previous block and resolve entities.
 	// numEligibleValidators is how many total validators are in the validator set, while
@@ -160,47 +159,65 @@ func (app *stakingApplication) onEpochChange(ctx *abci.Context, epoch epochtime.
 	state := stakingState.NewMutableState(ctx.State())
 
 	// Delegation unbonding after debonding period elapses.
-	for _, e := range state.ExpiredDebondingQueue(epoch) {
+	expiredDebondingQueue, err := state.ExpiredDebondingQueue(ctx, epoch)
+	if err != nil {
+		return fmt.Errorf("failed to query expired debonding queue: %w", err)
+	}
+	for _, e := range expiredDebondingQueue {
 		deb := e.Delegation
 		shareAmount := deb.Shares.Clone()
-		delegator := state.Account(e.DelegatorID)
+		delegator, err := state.Account(ctx, e.DelegatorID)
+		if err != nil {
+			return fmt.Errorf("failed to query delegator account: %w", err)
+		}
 		// NOTE: Could be the same account, so make sure to not have two duplicate
 		//       copies of it and overwrite it later.
 		var escrow *staking.Account
 		if e.DelegatorID.Equal(e.EscrowID) {
 			escrow = delegator
 		} else {
-			escrow = state.Account(e.EscrowID)
+			escrow, err = state.Account(ctx, e.EscrowID)
+			if err != nil {
+				return fmt.Errorf("failed to query escrow account: %w", err)
+			}
 		}
 
 		var tokens quantity.Quantity
-		if err := escrow.Escrow.Debonding.Withdraw(&tokens, &deb.Shares, shareAmount); err != nil {
+		if err = escrow.Escrow.Debonding.Withdraw(&tokens, &deb.Shares, shareAmount); err != nil {
 			ctx.Logger().Error("failed to redeem debonding shares",
 				"err", err,
 				"escrow_id", e.EscrowID,
 				"delegator_id", e.DelegatorID,
 				"shares", deb.Shares,
 			)
-			return errors.Wrap(err, "staking/tendermint: failed to redeem debonding shares")
+			return fmt.Errorf("staking/tendermint: failed to redeem debonding shares: %w", err)
 		}
 		tokenAmount := tokens.Clone()
 
-		if err := quantity.Move(&delegator.General.Balance, &tokens, tokenAmount); err != nil {
+		if err = quantity.Move(&delegator.General.Balance, &tokens, tokenAmount); err != nil {
 			ctx.Logger().Error("failed to move debonded tokens",
 				"err", err,
 				"escrow_id", e.EscrowID,
 				"delegator_id", e.DelegatorID,
 				"shares", deb.Shares,
 			)
-			return errors.Wrap(err, "staking/tendermint: failed to redeem debonding shares")
+			return fmt.Errorf("staking/tendermint: failed to redeem debonding shares: %w", err)
 		}
 
 		// Update state.
-		state.RemoveFromDebondingQueue(e.Epoch, e.DelegatorID, e.EscrowID, e.Seq)
-		state.SetDebondingDelegation(e.DelegatorID, e.EscrowID, e.Seq, nil)
-		state.SetAccount(e.DelegatorID, delegator)
+		if err = state.RemoveFromDebondingQueue(ctx, e.Epoch, e.DelegatorID, e.EscrowID, e.Seq); err != nil {
+			return fmt.Errorf("failed to remove from debonding queue: %w", err)
+		}
+		if err = state.SetDebondingDelegation(ctx, e.DelegatorID, e.EscrowID, e.Seq, nil); err != nil {
+			return fmt.Errorf("failed to set debonding delegation: %w", err)
+		}
+		if err = state.SetAccount(ctx, e.DelegatorID, delegator); err != nil {
+			return fmt.Errorf("failed to set account: %w", err)
+		}
 		if !e.DelegatorID.Equal(e.EscrowID) {
-			state.SetAccount(e.EscrowID, escrow)
+			if err = state.SetAccount(ctx, e.EscrowID, escrow); err != nil {
+				return fmt.Errorf("failed to set account: %w", err)
+			}
 		}
 
 		ctx.Logger().Debug("released tokens",
@@ -222,14 +239,14 @@ func (app *stakingApplication) onEpochChange(ctx *abci.Context, epoch epochtime.
 		ctx.Logger().Error("failed to add signing rewards",
 			"err", err,
 		)
-		return errors.Wrap(err, "staking/tendermint: failed to add signing rewards")
+		return fmt.Errorf("staking/tendermint: failed to add signing rewards: %w", err)
 	}
 
 	return nil
 }
 
 func (app *stakingApplication) FireTimer(ctx *abci.Context, timer *abci.Timer) error {
-	return errors.New("tendermint/staking: unexpected timer")
+	return fmt.Errorf("tendermint/staking: unexpected timer")
 }
 
 // New constructs a new staking application instance.

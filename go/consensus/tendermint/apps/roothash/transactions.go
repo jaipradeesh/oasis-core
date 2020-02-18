@@ -19,6 +19,7 @@ import (
 var _ commitment.SignatureVerifier = (*roothashSignatureVerifier)(nil)
 
 type roothashSignatureVerifier struct {
+	ctx       *abci.Context
 	runtimeID common.Namespace
 	scheduler *schedulerState.MutableState
 }
@@ -32,7 +33,7 @@ func (sv *roothashSignatureVerifier) VerifyCommitteeSignatures(kind scheduler.Co
 		return nil
 	}
 
-	committee, err := sv.scheduler.Committee(kind, sv.runtimeID)
+	committee, err := sv.scheduler.Committee(sv.ctx, kind, sv.runtimeID)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,7 @@ func (app *rootHashApplication) getRuntimeState(
 	id common.Namespace,
 ) (*roothashState.RuntimeState, commitment.SignatureVerifier, commitment.NodeLookup, error) {
 	// Fetch current runtime state.
-	rtState, err := state.RuntimeState(id)
+	rtState, err := state.RuntimeState(ctx, id)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("roothash: failed to fetch runtime state: %w", err)
 	}
@@ -75,6 +76,7 @@ func (app *rootHashApplication) getRuntimeState(
 
 	// Create signature verifier.
 	sv := &roothashSignatureVerifier{
+		ctx:       ctx,
 		runtimeID: id,
 		scheduler: schedulerState.NewMutableState(ctx.State()),
 	}
@@ -98,13 +100,13 @@ func (app *rootHashApplication) executorCommit(
 	ctx *abci.Context,
 	state *roothashState.MutableState,
 	cc *roothash.ExecutorCommit,
-) error {
+) (err error) {
 	if ctx.IsCheckOnly() {
 		return nil
 	}
 
 	// Charge gas for this transaction.
-	params, err := state.ConsensusParameters()
+	params, err := state.ConsensusParameters(ctx)
 	if err != nil {
 		ctx.Logger().Error("ComputeCommit: failed to fetch consensus parameters",
 			"err", err,
@@ -119,7 +121,11 @@ func (app *rootHashApplication) executorCommit(
 	if err != nil {
 		return err
 	}
-	defer state.SetRuntimeState(rtState)
+	defer func() {
+		if err2 := state.SetRuntimeState(ctx, rtState); err2 != nil {
+			err = fmt.Errorf("failed to set runtime state: %w", err2)
+		}
+	}()
 
 	pools := make(map[*commitment.Pool]bool)
 	for _, commit := range cc.Commits {
@@ -147,13 +153,13 @@ func (app *rootHashApplication) mergeCommit(
 	ctx *abci.Context,
 	state *roothashState.MutableState,
 	mc *roothash.MergeCommit,
-) error {
+) (err error) {
 	if ctx.IsCheckOnly() {
 		return nil
 	}
 
 	// Charge gas for this transaction.
-	params, err := state.ConsensusParameters()
+	params, err := state.ConsensusParameters(ctx)
 	if err != nil {
 		ctx.Logger().Error("MergeCommit: failed to fetch consensus parameters",
 			"err", err,
@@ -168,7 +174,11 @@ func (app *rootHashApplication) mergeCommit(
 	if err != nil {
 		return err
 	}
-	defer state.SetRuntimeState(rtState)
+	defer func() {
+		if err2 := state.SetRuntimeState(ctx, rtState); err2 != nil {
+			err = fmt.Errorf("failed to set runtime state: %w", err2)
+		}
+	}()
 
 	// Add commitments.
 	for _, commit := range mc.Commits {

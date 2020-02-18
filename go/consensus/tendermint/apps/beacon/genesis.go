@@ -2,6 +2,7 @@ package beacon
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tendermint/tendermint/abci/types"
 
@@ -19,7 +20,9 @@ func (app *beaconApplication) InitChain(ctx *abci.Context, req types.RequestInit
 	// It is not super important for now as the epoch will transition
 	// immediately on the first block under normal circumstances.
 	state := beaconState.NewMutableState(ctx.State())
-	state.SetConsensusParameters(&doc.Beacon.Parameters)
+	if err := state.SetConsensusParameters(ctx, &doc.Beacon.Parameters); err != nil {
+		return fmt.Errorf("failed to set consensus parameters: %w", err)
+	}
 
 	if doc.Beacon.Parameters.DebugDeterministic {
 		ctx.Logger().Warn("Determistic beacon entropy is NOT FOR PRODUCTION USE")
@@ -28,7 +31,7 @@ func (app *beaconApplication) InitChain(ctx *abci.Context, req types.RequestInit
 }
 
 func (bq *beaconQuerier) Genesis(ctx context.Context) (*beacon.Genesis, error) {
-	params, err := bq.state.ConsensusParameters()
+	params, err := bq.state.ConsensusParameters(ctx)
 	if err != nil {
 		return nil, err
 	}

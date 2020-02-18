@@ -4,7 +4,6 @@ import (
 	"math/rand"
 
 	"github.com/pkg/errors"
-	"github.com/tendermint/iavl"
 	"github.com/tendermint/tendermint/abci/types"
 
 	"github.com/oasislabs/oasis-core/go/common/logging"
@@ -107,14 +106,13 @@ func (app *supplementarySanityApplication) endBlockImpl(ctx *abci.Context, reque
 
 	logger.Debug("checking this block", "height", request.Height)
 
-	now, err := app.state.GetEpoch(ctx.Ctx(), ctx.BlockHeight()+1)
+	now, err := app.state.GetEpoch(ctx, ctx.BlockHeight()+1)
 	if err != nil {
 		return errors.Wrap(err, "GetEpoch")
 	}
-	state := ctx.State()
 	for _, tt := range []struct {
 		name    string
-		checker func(state *iavl.MutableTree, now epochtime.EpochTime) error
+		checker func(ctx *abci.Context, now epochtime.EpochTime) error
 	}{
 		{"checkEpochTime", checkEpochTime},
 		{"checkRegistry", checkRegistry},
@@ -127,7 +125,7 @@ func (app *supplementarySanityApplication) endBlockImpl(ctx *abci.Context, reque
 		{"checkHalt", checkHalt},
 		{"checkStakeClaims", checkStakeClaims},
 	} {
-		if err := tt.checker(state, now); err != nil {
+		if err := tt.checker(ctx, now); err != nil {
 			return errors.Wrap(err, tt.name)
 		}
 	}

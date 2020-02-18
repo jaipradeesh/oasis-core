@@ -4,7 +4,6 @@ import (
 	"context"
 
 	consensus "github.com/oasislabs/oasis-core/go/consensus/api"
-	"github.com/oasislabs/oasis-core/go/consensus/tendermint/abci"
 	schedulerState "github.com/oasislabs/oasis-core/go/consensus/tendermint/apps/scheduler/state"
 	scheduler "github.com/oasislabs/oasis-core/go/scheduler/api"
 )
@@ -24,27 +23,10 @@ type QueryFactory struct {
 
 // QueryAt returns the scheduler query interface for a specific height.
 func (sf *QueryFactory) QueryAt(ctx context.Context, height int64) (Query, error) {
-	var state *schedulerState.ImmutableState
-	var err error
-	abciCtx := abci.FromCtx(ctx)
-
-	// If this request was made from InitChain, no blocks and states have been
-	// submitted yet, so we use the existing state instead.
-	if abciCtx != nil && abciCtx.IsInitChain() {
-		state = schedulerState.NewMutableState(abciCtx.State()).ImmutableState
-	} else {
-		state, err = schedulerState.NewImmutableState(sf.app.state, height)
-		if err != nil {
-			return nil, err
-		}
+	state, err := schedulerState.NewImmutableState(ctx, sf.app.state, height)
+	if err != nil {
+		return nil, err
 	}
-
-	// If this request was made from an ABCI app, make sure to use the associated
-	// context for querying state instead of the default one.
-	if abciCtx != nil && height == abciCtx.BlockHeight()+1 {
-		state.Snapshot = abciCtx.State().ImmutableTree
-	}
-
 	return &schedulerQuerier{state}, nil
 }
 
@@ -53,7 +35,7 @@ type schedulerQuerier struct {
 }
 
 func (sq *schedulerQuerier) Validators(ctx context.Context) ([]*scheduler.Validator, error) {
-	valPks, err := sq.state.CurrentValidators()
+	valPks, err := sq.state.CurrentValidators(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -73,11 +55,11 @@ func (sq *schedulerQuerier) Validators(ctx context.Context) ([]*scheduler.Valida
 }
 
 func (sq *schedulerQuerier) AllCommittees(ctx context.Context) ([]*scheduler.Committee, error) {
-	return sq.state.AllCommittees()
+	return sq.state.AllCommittees(ctx)
 }
 
 func (sq *schedulerQuerier) KindsCommittees(ctx context.Context, kinds []scheduler.CommitteeKind) ([]*scheduler.Committee, error) {
-	return sq.state.KindsCommittees(kinds)
+	return sq.state.KindsCommittees(ctx, kinds)
 }
 
 func (app *schedulerApplication) QueryFactory() interface{} {

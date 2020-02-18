@@ -19,7 +19,7 @@ func (app *stakingApplication) resolveEntityIDsFromVotes(ctx *abci.Context, regS
 		valAddr := a.Validator.Address
 
 		// Map address to node/entity.
-		node, err := regState.NodeByConsensusAddress(valAddr)
+		node, err := regState.NodeByConsensusAddress(ctx, valAddr)
 		if err != nil {
 			ctx.Logger().Warn("failed to get validator node",
 				"err", err,

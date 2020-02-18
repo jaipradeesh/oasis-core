@@ -9,8 +9,12 @@ import (
 	epochtime "github.com/oasislabs/oasis-core/go/epochtime/api"
 )
 
-func (app *stakingApplication) updateEpochSigning(ctx *abci.Context, stakeState *stakingState.MutableState, signingEntities []signature.PublicKey) error {
-	epochSigning, err := stakeState.EpochSigning()
+func (app *stakingApplication) updateEpochSigning(
+	ctx *abci.Context,
+	stakeState *stakingState.MutableState,
+	signingEntities []signature.PublicKey,
+) error {
+	epochSigning, err := stakeState.EpochSigning(ctx)
 	if err != nil {
 		return fmt.Errorf("loading epoch signing info: %w", err)
 	}
@@ -19,7 +23,9 @@ func (app *stakingApplication) updateEpochSigning(ctx *abci.Context, stakeState 
 		return err
 	}
 
-	stakeState.SetEpochSigning(epochSigning)
+	if err := stakeState.SetEpochSigning(ctx, epochSigning); err != nil {
+		return fmt.Errorf("failed to set epoch signing info: %w", err)
+	}
 
 	return nil
 }
@@ -27,21 +33,25 @@ func (app *stakingApplication) updateEpochSigning(ctx *abci.Context, stakeState 
 func (app *stakingApplication) rewardEpochSigning(ctx *abci.Context, time epochtime.EpochTime) error {
 	stakeState := stakingState.NewMutableState(ctx.State())
 
-	params, err := stakeState.ConsensusParameters()
+	params, err := stakeState.ConsensusParameters(ctx)
 	if err != nil {
 		return fmt.Errorf("loading consensus parameters: %w", err)
 	}
 	if params.SigningRewardThresholdDenominator == 0 {
-		stakeState.ClearEpochSigning()
+		if err = stakeState.ClearEpochSigning(ctx); err != nil {
+			return fmt.Errorf("failed to clear epoch signing: %w", err)
+		}
 		return nil
 	}
 
-	epochSigning, err := stakeState.EpochSigning()
+	epochSigning, err := stakeState.EpochSigning(ctx)
 	if err != nil {
 		return fmt.Errorf("loading epoch signing info: %w", err)
 	}
 
-	stakeState.ClearEpochSigning()
+	if err = stakeState.ClearEpochSigning(ctx); err != nil {
+		return fmt.Errorf("failed to clear epoch signing: %w", err)
+	}
 
 	if epochSigning.Total == 0 {
 		return nil
@@ -52,7 +62,7 @@ func (app *stakingApplication) rewardEpochSigning(ctx *abci.Context, time epocht
 		return fmt.Errorf("determining eligibility: %w", err)
 	}
 
-	if err := stakeState.AddRewards(time, &params.RewardFactorEpochSigned, eligibleEntities); err != nil {
+	if err := stakeState.AddRewards(ctx, time, &params.RewardFactorEpochSigned, eligibleEntities); err != nil {
 		return fmt.Errorf("adding rewards: %w", err)
 	}
 
